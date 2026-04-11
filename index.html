@@ -1,0 +1,476 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>老鹰抓鱼</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: #87CEEB; overflow: hidden; font-family: Arial, sans-serif; }
+  #gameContainer { position: relative; width: 600px; height: 500px; margin: 10px auto; overflow: hidden; border-radius: 16px; box-shadow: 0 8px 32px rgba(0,0,0,0.3); }
+  #gameCanvas { position: absolute; z-index: 1; top: 0; left: 0; }
+  #startScreen { position: absolute; z-index: 100; top: 0; left: 0; width: 100%; height: 100%; background: linear-gradient(180deg,#87CEEB 50%,#1a6fa8 100%); display: flex; flex-direction: column; align-items: center; justify-content: center; pointer-events: auto; }
+  #startScreen h1 { font-size: 42px; color: #fff; text-shadow: 3px 3px 6px rgba(0,0,0,0.4); margin-bottom: 10px; }
+  #startScreen p { color: #ffe; font-size: 14px; margin-bottom: 20px; text-align: center; line-height: 1.6; }
+  .bigBtn { background: linear-gradient(135deg,#ff9f43,#ee5a24); color: #fff; border: none; border-radius: 30px; padding: 14px 40px; font-size: 20px; cursor: pointer; box-shadow: 0 4px 12px rgba(0,0,0,0.3); transition: transform 0.1s; }
+  .bigBtn:hover { transform: scale(1.05); }
+  #overlay { position: absolute; z-index: 200; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.55); display: none; flex-direction: column; align-items: center; justify-content: center; pointer-events: auto; }
+  #overlay h2 { font-size: 36px; color: #fff; text-shadow: 2px 2px 8px #000; margin-bottom: 16px; }
+  #overlay p { color: #ffe; font-size: 16px; margin-bottom: 20px; }
+  #hud { position: absolute; z-index: 50; top: 8px; left: 8px; color: #fff; font-size: 15px; text-shadow: 1px 1px 3px #000; pointer-events: none; }
+  #hud span { margin-right: 14px; }
+</style>
+</head>
+<body>
+<div id="gameContainer">
+  <canvas id="gameCanvas" width="600" height="500"></canvas>
+  <div id="hud">
+    <span id="scoreHud">分数: 0</span>
+    <span id="livesHud">❤️❤️❤️</span>
+    <span id="levelHud">第1关</span>
+    <span id="waterHud"></span>
+  </div>
+  <div id="startScreen">
+    <h1>🦅 老鹰抓鱼</h1>
+    <p>用方向键控制老鹰抓鱼！<br>小鱼0.5分 中鱼1分 大鱼1.5分<br>⚠️ 避开鲨鱼！水下超过1秒要浮出水面</p>
+    <button class="bigBtn" id="startBtn">开始游戏</button>
+  </div>
+  <div id="overlay">
+    <h2 id="overlayTitle">🎉 恭喜过关！</h2>
+    <p id="overlayMsg">得分：0</p>
+    <button class="bigBtn" id="overlayBtn">继续</button>
+  </div>
+</div>
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+  var canvas = document.getElementById('gameCanvas');
+  var ctx = canvas.getContext('2d');
+  var W = canvas.width, H = canvas.height;
+  var SEA_Y = 220; // water surface y
+
+  // Game state
+  var score = 0, lives = 3, level = 1, gameRunning = false;
+  var returning = false; // eagle returning to surface
+  var waterTimer = 0;   // ms under water
+  var WATER_LIMIT = 1000;
+
+  // Eagle
+  var eagle = { x: 300, y: 100, w: 50, h: 40, vx: 0, vy: 0, speed: 4, diving: false };
+
+  // Collections
+  var fishes = [], clouds = [], birds = [], raindrops = [], waveOffsets = [];
+  var particles = []; // celebration particles
+  var pushFishes = []; // fish being pushed to surface
+
+  // Wave
+  for (var i = 0; i < 20; i++) waveOffsets.push(Math.random() * Math.PI * 2);
+
+  // Keys
+  var keys = {};
+  document.addEventListener('keydown', function(e) { keys[e.key] = true; e.preventDefault(); });
+  document.addEventListener('keyup', function(e) { keys[e.key] = false; });
+
+  // Fish types
+  var FISH_TYPES = [
+    { size: 'small', w: 22, h: 14, score: 0.5, color: '#f9ca24', speed: 1.2 },
+    { size: 'medium', w: 34, h: 22, score: 1.0, color: '#6ab04c', speed: 0.9 },
+    { size: 'large', w: 46, h: 30, score: 1.5, color: '#e17055', speed: 0.6 },
+    { size: 'shark', w: 52, h: 32, score: -1, color: '#636e72', speed: 1.5 }
+  ];
+
+  function spawnFish() {
+    var typeIdx = Math.random() < 0.15 ? 3 : Math.floor(Math.random() * 3);
+    var t = FISH_TYPES[typeIdx];
+    var dir = Math.random() < 0.5 ? 1 : -1;
+    fishes.push({
+      x: dir === 1 ? -60 : W + 60,
+      y: SEA_Y + 30 + Math.random() * (H - SEA_Y - 60),
+      w: t.w, h: t.h, score: t.score, color: t.color,
+      speed: t.speed * dir, type: t.size,
+      wobble: Math.random() * Math.PI * 2
+    });
+  }
+
+  function spawnCloud() {
+    clouds.push({ x: W + 80, y: 20 + Math.random() * 80, r: 30 + Math.random() * 40, speed: 0.3 + Math.random() * 0.4 });
+  }
+
+  function spawnBird() {
+    birds.push({ x: -30, y: 40 + Math.random() * 100, speed: 1 + Math.random() * 1.5, wing: 0 });
+  }
+
+  function spawnRain(count) {
+    for (var i = 0; i < count; i++) {
+      raindrops.push({ x: Math.random() * W, y: Math.random() * H * 0.7, speed: 6 + Math.random() * 4 });
+    }
+  }
+
+  // Init level
+  function initLevel() {
+    fishes = []; raindrops = []; particles = []; pushFishes = [];
+    returning = false; waterTimer = 0;
+    eagle.x = 300; eagle.y = 100; eagle.vx = 0; eagle.vy = 0; eagle.diving = false;
+    for (var i = 0; i < 6 + level; i++) spawnFish();
+    for (var j = 0; j < 4; j++) spawnCloud();
+    if (level >= 2) spawnBird();
+    if (level === 3) spawnRain(40);
+  }
+
+  // Draw sky & sea
+  function drawBackground() {
+    // Sky gradient
+    var skyGrad = ctx.createLinearGradient(0, 0, 0, SEA_Y);
+    skyGrad.addColorStop(0, level === 3 ? '#546e7a' : '#87CEEB');
+    skyGrad.addColorStop(1, level === 3 ? '#78909c' : '#b3e5fc');
+    ctx.fillStyle = skyGrad;
+    ctx.fillRect(0, 0, W, SEA_Y);
+
+    // Sea gradient
+    var seaGrad = ctx.createLinearGradient(0, SEA_Y, 0, H);
+    seaGrad.addColorStop(0, '#0288d1');
+    seaGrad.addColorStop(1, '#01579b');
+    ctx.fillStyle = seaGrad;
+    ctx.fillRect(0, SEA_Y, W, H - SEA_Y);
+
+    // Waves
+    ctx.save();
+    ctx.strokeStyle = 'rgba(255,255,255,0.6)';
+    ctx.lineWidth = 2;
+    var waveAmp = 4 + level * 3;
+    for (var w = 0; w < 3; w++) {
+      ctx.beginPath();
+      for (var x = 0; x <= W; x += 5) {
+        var y2 = SEA_Y + w * 8 + Math.sin(x * 0.04 + waveOffsets[w] * 0.5) * waveAmp;
+        if (x === 0) ctx.moveTo(x, y2); else ctx.lineTo(x, y2);
+      }
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
+
+  function drawClouds(dt) {
+    ctx.save();
+    for (var i = clouds.length - 1; i >= 0; i--) {
+      var c = clouds[i];
+      c.x -= c.speed * (1 + (level - 1) * 0.5) * dt / 16;
+      if (c.x < -100) { clouds.splice(i, 1); spawnCloud(); continue; }
+      ctx.fillStyle = 'rgba(255,255,255,0.88)';
+      ctx.beginPath(); ctx.arc(c.x, c.y, c.r, 0, Math.PI * 2);
+      ctx.arc(c.x + c.r * 0.7, c.y - 10, c.r * 0.7, 0, Math.PI * 2);
+      ctx.arc(c.x - c.r * 0.6, c.y - 5, c.r * 0.6, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.restore();
+  }
+
+  function drawBirds(dt) {
+    ctx.save();
+    for (var i = birds.length - 1; i >= 0; i--) {
+      var b = birds[i];
+      b.x += b.speed * dt / 16;
+      b.wing = (b.wing + 0.15) % (Math.PI * 2);
+      if (b.x > W + 50) { birds.splice(i, 1); if (Math.random() < 0.7) spawnBird(); continue; }
+      var wy = Math.sin(b.wing) * 8;
+      ctx.strokeStyle = '#555'; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.moveTo(b.x - 10, b.y + wy); ctx.quadraticCurveTo(b.x, b.y, b.x + 10, b.y + wy); ctx.stroke();
+    }
+    ctx.restore();
+  }
+
+  function drawRain(dt) {
+    if (level < 3) return;
+    var windX = 2 + (level - 1);
+    ctx.save(); ctx.strokeStyle = 'rgba(150,200,255,0.6)'; ctx.lineWidth = 1;
+    for (var i = 0; i < raindrops.length; i++) {
+      var r = raindrops[i];
+      r.y += r.speed * dt / 16; r.x += windX * dt / 16;
+      if (r.y > H) { r.y = -10; r.x = Math.random() * W; }
+      ctx.beginPath(); ctx.moveTo(r.x, r.y); ctx.lineTo(r.x - windX, r.y - 10); ctx.stroke();
+    }
+    ctx.restore();
+  }
+
+  function drawFish(f, pushed) {
+    ctx.save();
+    if (f.speed < 0) ctx.scale(-1, 1);
+    var fx = f.speed < 0 ? -f.x : f.x;
+    f.wobble = (f.wobble + 0.05) % (Math.PI * 2);
+    var wobY = pushed ? 0 : Math.sin(f.wobble) * 3;
+    // Body
+    ctx.fillStyle = f.color;
+    ctx.beginPath(); ctx.ellipse(fx, f.y + wobY, f.w / 2, f.h / 2, 0, 0, Math.PI * 2); ctx.fill();
+    // Tail
+    ctx.beginPath(); ctx.moveTo(fx + f.w / 2, f.y + wobY);
+    ctx.lineTo(fx + f.w / 2 + 10, f.y + wobY - 8);
+    ctx.lineTo(fx + f.w / 2 + 10, f.y + wobY + 8); ctx.closePath(); ctx.fill();
+    // Eye
+    ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(fx - f.w / 4, f.y + wobY - 2, 4, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#333'; ctx.beginPath(); ctx.arc(fx - f.w / 4, f.y + wobY - 2, 2, 0, Math.PI * 2); ctx.fill();
+    // Shark fin
+    if (f.type === 'shark') {
+      ctx.fillStyle = '#555';
+      ctx.beginPath(); ctx.moveTo(fx - 5, f.y + wobY - f.h / 2);
+      ctx.lineTo(fx + 5, f.y + wobY - f.h / 2 - 16); ctx.lineTo(fx + 15, f.y + wobY - f.h / 2); ctx.closePath(); ctx.fill();
+    }
+    ctx.restore();
+  }
+
+  function drawEagle() {
+    ctx.save();
+    ctx.translate(eagle.x, eagle.y);
+    // Body
+    ctx.fillStyle = '#8B4513';
+    ctx.beginPath(); ctx.ellipse(0, 0, 22, 14, 0, 0, Math.PI * 2); ctx.fill();
+    // Head
+    ctx.fillStyle = '#f9ca24';
+    ctx.beginPath(); ctx.arc(-18, -6, 10, 0, Math.PI * 2); ctx.fill();
+    // Beak
+    ctx.fillStyle = '#e17055';
+    ctx.beginPath(); ctx.moveTo(-26, -6); ctx.lineTo(-34, -3); ctx.lineTo(-26, 0); ctx.closePath(); ctx.fill();
+    // Eye
+    ctx.fillStyle = '#333'; ctx.beginPath(); ctx.arc(-20, -8, 3, 0, Math.PI * 2); ctx.fill();
+    // Wings
+    var wingFlap = Math.sin(Date.now() / 120) * (returning ? 18 : 12);
+    ctx.fillStyle = '#5D4037';
+    ctx.beginPath(); ctx.moveTo(0, -4); ctx.quadraticCurveTo(15, -20 - wingFlap, 28, -8); ctx.quadraticCurveTo(15, 0, 0, 4); ctx.fill();
+    ctx.beginPath(); ctx.moveTo(0, -4); ctx.quadraticCurveTo(-10, -18 - wingFlap, -22, -6); ctx.quadraticCurveTo(-12, 2, 0, 4); ctx.fill();
+    ctx.restore();
+  }
+
+  function drawParticles(dt) {
+    for (var i = particles.length - 1; i >= 0; i--) {
+      var p = particles[i];
+      p.x += p.vx * dt / 16; p.y += p.vy * dt / 16; p.life -= dt;
+      p.vy += 0.2;
+      if (p.life <= 0) { particles.splice(i, 1); continue; }
+      ctx.save(); ctx.globalAlpha = p.life / 2000;
+      ctx.fillStyle = p.color; ctx.font = p.size + 'px Arial';
+      ctx.fillText(p.char, p.x, p.y);
+      ctx.restore();
+    }
+  }
+
+  function spawnCelebration() {
+    var chars = ['🐟','🐠','🐡','🎉','⭐','✨','🌟','🎊'];
+    for (var i = 0; i < 40; i++) {
+      particles.push({ x: Math.random() * W, y: Math.random() * H, vx: (Math.random() - 0.5) * 5,
+        vy: -3 - Math.random() * 5, life: 2000 + Math.random() * 1000,
+        color: '#ff0', char: chars[Math.floor(Math.random() * chars.length)], size: 18 + Math.floor(Math.random() * 18) });
+    }
+  }
+
+  function updateFishes(dt) {
+    if (Math.random() < 0.012 * dt / 16 && fishes.length < 10 + level) spawnFish();
+    for (var i = fishes.length - 1; i >= 0; i--) {
+      var f = fishes[i];
+      f.x += f.speed * dt / 16;
+      if (f.x < -80 || f.x > W + 80) { fishes.splice(i, 1); continue; }
+    }
+  }
+
+  function checkCollisions() {
+    if (returning) return;
+    var er = 24;
+    for (var i = fishes.length - 1; i >= 0; i--) {
+      var f = fishes[i];
+      var dx = eagle.x - f.x, dy = eagle.y - f.y;
+      var dist = Math.sqrt(dx * dx + dy * dy);
+      if (dist < er + f.w / 2) {
+        if (f.type === 'shark') {
+          lives--;
+          updateHUD();
+          fishes.splice(i, 1);
+          // push shark away briefly (just remove it)
+          if (lives <= 0) { gameOver(); return; }
+          returning = true; waterTimer = 0;
+        } else {
+          score += f.score;
+          score = Math.round(score * 10) / 10;
+          updateHUD();
+          fishes.splice(i, 1);
+          spawnFish();
+        }
+      }
+    }
+  }
+
+  function checkPushFishes(dt) {
+    for (var i = pushFishes.length - 1; i >= 0; i--) {
+      var pf = pushFishes[i];
+      pf.y -= 4 * dt / 16;
+      if (pf.y < SEA_Y - 10) {
+        pf.y = SEA_Y + 30 + Math.random() * (H - SEA_Y - 60);
+        pf.speed *= -0.5 + Math.random();
+        if (pf.speed === 0) pf.speed = 0.8;
+        fishes.push(pf); pushFishes.splice(i, 1);
+      }
+    }
+  }
+
+  function updateEagle(dt) {
+    if (returning) {
+      // Auto fly back to sky
+      eagle.vy = -4;
+      eagle.vx *= 0.9;
+      eagle.y += eagle.vy * dt / 16;
+      eagle.x += eagle.vx * dt / 16;
+      // Check if fish hit eagle while returning
+      for (var i = fishes.length - 1; i >= 0; i--) {
+        var f = fishes[i];
+        var dx = eagle.x - f.x, dy = eagle.y - f.y;
+        if (Math.sqrt(dx * dx + dy * dy) < 24 + f.w / 2) {
+          // Push fish up
+          pushFishes.push(f); fishes.splice(i, 1);
+        }
+      }
+      if (eagle.y < SEA_Y - 20) {
+        returning = false; waterTimer = 0; eagle.diving = false;
+        eagle.vy = 0;
+      }
+      return;
+    }
+
+    var spd = eagle.speed;
+    if (keys['ArrowLeft'])  eagle.vx = -spd;
+    else if (keys['ArrowRight']) eagle.vx = spd;
+    else eagle.vx *= 0.85;
+    if (keys['ArrowUp'])   eagle.vy = -spd;
+    else if (keys['ArrowDown']) eagle.vy = spd;
+    else eagle.vy *= 0.85;
+
+    eagle.x += eagle.vx * dt / 16;
+    eagle.y += eagle.vy * dt / 16;
+    eagle.x = Math.max(20, Math.min(W - 20, eagle.x));
+    eagle.y = Math.max(20, Math.min(H - 20, eagle.y));
+
+    // Underwater tracking
+    if (eagle.y > SEA_Y) {
+      eagle.diving = true;
+      waterTimer += dt;
+      if (waterTimer >= WATER_LIMIT) { returning = true; waterTimer = 0; }
+    } else {
+      eagle.diving = false;
+      waterTimer = 0;
+    }
+  }
+
+  function updateHUD() {
+    var scoreEl = document.getElementById('scoreHud');
+    var livesEl = document.getElementById('livesHud');
+    var levelEl = document.getElementById('levelHud');
+    var waterEl = document.getElementById('waterHud');
+    if (scoreEl) scoreEl.textContent = '分数: ' + score;
+    if (livesEl) livesEl.textContent = '❤️'.repeat(Math.max(0, lives));
+    if (levelEl) levelEl.textContent = '第' + level + '关';
+    if (waterEl && eagle.diving && !returning) {
+      var pct = Math.min(100, (waterTimer / WATER_LIMIT * 100)).toFixed(0);
+      waterEl.textContent = '水下: ' + pct + '%';
+    } else if (waterEl) { waterEl.textContent = ''; }
+  }
+
+  function showOverlay(title, msg, btnText) {
+    gameRunning = false;
+    var ov = document.getElementById('overlay');
+    var ot = document.getElementById('overlayTitle');
+    var om = document.getElementById('overlayMsg');
+    var ob = document.getElementById('overlayBtn');
+    if (ot) ot.textContent = title;
+    if (om) om.textContent = msg;
+    if (ob) ob.textContent = btnText || '继续';
+    if (ov) ov.style.display = 'flex';
+  }
+
+  function hideOverlay() {
+    var ov = document.getElementById('overlay');
+    if (ov) ov.style.display = 'none';
+  }
+
+  function checkLevelUp() {
+    var targets = [6, 12, 18];
+    if (level <= 3 && score >= targets[level - 1]) {
+      if (level === 3) {
+        spawnCelebration();
+        showOverlay('🎉 Congratulations! 🎉', '你通关了！总分：' + score, '再玩一次');
+      } else {
+        level++;
+        initLevel();
+        updateHUD();
+        showOverlay('🌟 第' + level + '关', '进入第' + level + '关！风浪更大了！', '继续');
+      }
+    }
+  }
+
+  function gameOver() {
+    showOverlay('💔 游戏结束', '最终得分：' + score, '重新开始');
+  }
+
+  var lastTime = 0;
+  function gameLoop(ts) {
+    var dt = ts - lastTime || 16;
+    if (dt > 80) dt = 80;
+    lastTime = ts;
+
+    if (!gameRunning) { requestAnimationFrame(gameLoop); return; }
+
+    // Update
+    updateFishes(dt);
+    updateEagle(dt);
+    checkCollisions();
+    checkPushFishes(dt);
+    updateHUD();
+    checkLevelUp();
+
+    // Wave animation
+    for (var w = 0; w < waveOffsets.length; w++) waveOffsets[w] += 0.02 * (1 + (level - 1) * 0.5);
+
+    // Draw
+    ctx.clearRect(0, 0, W, H);
+    drawBackground();
+    drawClouds(dt);
+    drawBirds(dt);
+    drawRain(dt);
+
+    // Draw push fishes
+    for (var i = 0; i < pushFishes.length; i++) drawFish(pushFishes[i], true);
+    // Draw fishes
+    for (var i = 0; i < fishes.length; i++) drawFish(fishes[i], false);
+
+    drawEagle();
+    drawParticles(dt);
+
+    requestAnimationFrame(gameLoop);
+  }
+
+  // Periodically spawn birds
+  setInterval(function() { if (gameRunning && level >= 2 && birds.length < 3) spawnBird(); }, 3000);
+
+  // Button handlers
+  var startBtn = document.getElementById('startBtn');
+  if (startBtn) startBtn.addEventListener('click', function() {
+    document.getElementById('startScreen').style.display = 'none';
+    score = 0; lives = 3; level = 1;
+    initLevel(); updateHUD();
+    gameRunning = true;
+  });
+
+  var overlayBtn = document.getElementById('overlayBtn');
+  if (overlayBtn) overlayBtn.addEventListener('click', function() {
+    hideOverlay();
+    // Check if it's game over or win
+    var title = document.getElementById('overlayTitle').textContent;
+    if (title.includes('游戏结束') || title.includes('Congratulations')) {
+      // Restart
+      score = 0; lives = 3; level = 1;
+      initLevel(); updateHUD();
+    }
+    gameRunning = true;
+  });
+
+  // Start loop immediately (it checks gameRunning flag)
+  requestAnimationFrame(gameLoop);
+
+  // BUTTON CHECKLIST: #startBtn ✓  #overlayBtn ✓
+});
+</script>
+</body>
+</html>
