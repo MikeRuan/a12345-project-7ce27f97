@@ -91,7 +91,7 @@ document.addEventListener('DOMContentLoaded', function() {
   }
 
   function spawnBird() {
-    // Birds always fly left-to-right: spawn off left edge, move right
+    // Birds fly left-to-right: spawn off left edge, move right
     birds.push({ x: -30, y: 40 + Math.random() * 100, speed: 1 + Math.random() * 1.5, wing: 0 });
   }
 
@@ -155,7 +155,7 @@ document.addEventListener('DOMContentLoaded', function() {
     ctx.restore();
   }
 
-  // Draw bird facing the direction it's flying (always left→right here)
+  // Draw bird always facing RIGHT (the direction it flies: left → right)
   function drawBirds(dt) {
     ctx.save();
     for (var i = birds.length - 1; i >= 0; i--) {
@@ -163,14 +163,58 @@ document.addEventListener('DOMContentLoaded', function() {
       b.x += b.speed * dt / 16;
       b.wing = (b.wing + 0.15) % (Math.PI * 2);
       if (b.x > W + 50) { birds.splice(i, 1); if (Math.random() < 0.7) spawnBird(); continue; }
-      // Wing flap offset
-      var wy = Math.sin(b.wing) * 8;
-      ctx.strokeStyle = '#555'; ctx.lineWidth = 2;
-      // Draw a simple "M" bird shape facing right: two curves spreading from center
+
+      var wy = Math.sin(b.wing) * 8; // wing flap amount
+
+      ctx.save();
+      ctx.translate(b.x, b.y);
+      // Bird body (small oval)
+      ctx.fillStyle = '#444';
       ctx.beginPath();
-      ctx.moveTo(b.x - 10, b.y + wy);
-      ctx.quadraticCurveTo(b.x, b.y, b.x + 10, b.y + wy);
-      ctx.stroke();
+      ctx.ellipse(0, 0, 9, 5, 0, 0, Math.PI * 2);
+      ctx.fill();
+      // Head on the RIGHT (direction of travel)
+      ctx.fillStyle = '#333';
+      ctx.beginPath();
+      ctx.arc(10, -2, 4, 0, Math.PI * 2);
+      ctx.fill();
+      // Beak pointing RIGHT
+      ctx.fillStyle = '#e17055';
+      ctx.beginPath();
+      ctx.moveTo(14, -2);
+      ctx.lineTo(20, -1);
+      ctx.lineTo(14, 1);
+      ctx.closePath();
+      ctx.fill();
+      // Eye
+      ctx.fillStyle = '#fff';
+      ctx.beginPath(); ctx.arc(11, -3, 1.5, 0, Math.PI * 2); ctx.fill();
+      // Left wing (upper wing) — flaps upward
+      ctx.fillStyle = '#555';
+      ctx.beginPath();
+      ctx.moveTo(-2, -2);
+      ctx.quadraticCurveTo(-10, -12 - wy, -20, -4 - wy);
+      ctx.quadraticCurveTo(-10, 0, -2, 2);
+      ctx.closePath();
+      ctx.fill();
+      // Right wing (lower wing) — flaps downward (tail side)
+      ctx.beginPath();
+      ctx.moveTo(-2, -2);
+      ctx.quadraticCurveTo(-8, 8 + wy * 0.5, -18, 6 + wy * 0.5);
+      ctx.quadraticCurveTo(-10, 0, -2, 2);
+      ctx.closePath();
+      ctx.fill();
+      // Tail feathers pointing LEFT (opposite to head)
+      ctx.fillStyle = '#444';
+      ctx.beginPath();
+      ctx.moveTo(-8, 0);
+      ctx.lineTo(-18, -5);
+      ctx.lineTo(-16, 0);
+      ctx.lineTo(-18, 5);
+      ctx.closePath();
+      ctx.fill();
+
+      ctx.restore();
     }
     ctx.restore();
   }
@@ -188,49 +232,55 @@ document.addEventListener('DOMContentLoaded', function() {
     ctx.restore();
   }
 
-  // Draw fish without ctx.scale flip — instead manually mirror the shape
+  // Draw fish facing the direction it swims.
+  // speed > 0 means moving RIGHT → face right.
+  // speed < 0 means moving LEFT  → face left.
   function drawFish(f, pushed) {
     ctx.save();
     ctx.translate(f.x, f.y);
 
-    // If speed < 0 the fish moves left, so flip horizontally
-    var facingLeft = f.speed < 0;
-    if (facingLeft) ctx.scale(-1, 1);
+    // facingRight: fish moves right (speed > 0), so head is on RIGHT side.
+    // We draw the fish naturally facing right.
+    // If moving left (speed < 0) we flip with scale(-1,1) so it still faces its direction.
+    var facingRight = f.speed >= 0;
+    if (!facingRight) ctx.scale(-1, 1); // flip so left-moving fish faces left
 
     f.wobble = (f.wobble + 0.05) % (Math.PI * 2);
     var wobY = pushed ? 0 : Math.sin(f.wobble) * 3;
 
-    // Body (centered at 0,0 after translate)
+    var hw = f.w / 2, hh = f.h / 2;
+
+    // Body
     ctx.fillStyle = f.color;
     ctx.beginPath();
-    ctx.ellipse(0, wobY, f.w / 2, f.h / 2, 0, 0, Math.PI * 2);
+    ctx.ellipse(0, wobY, hw, hh, 0, 0, Math.PI * 2);
     ctx.fill();
 
-    // Tail on the RIGHT side of the body (opposite to head which is on left)
+    // Tail on the LEFT side (back of fish, opposite to head which faces right)
     ctx.beginPath();
-    ctx.moveTo(f.w / 2, wobY);
-    ctx.lineTo(f.w / 2 + 10, wobY - 8);
-    ctx.lineTo(f.w / 2 + 10, wobY + 8);
+    ctx.moveTo(-hw, wobY);
+    ctx.lineTo(-hw - 10, wobY - 8);
+    ctx.lineTo(-hw - 10, wobY + 8);
     ctx.closePath();
     ctx.fill();
 
-    // Eye on the LEFT side (front of fish)
+    // Eye on the RIGHT side (front/head of fish)
     ctx.fillStyle = '#fff';
     ctx.beginPath();
-    ctx.arc(-f.w / 4, wobY - 2, 4, 0, Math.PI * 2);
+    ctx.arc(hw * 0.55, wobY - hh * 0.25, 4, 0, Math.PI * 2);
     ctx.fill();
     ctx.fillStyle = '#333';
     ctx.beginPath();
-    ctx.arc(-f.w / 4, wobY - 2, 2, 0, Math.PI * 2);
+    ctx.arc(hw * 0.55, wobY - hh * 0.25, 2, 0, Math.PI * 2);
     ctx.fill();
 
     // Shark dorsal fin on top
     if (f.type === 'shark') {
       ctx.fillStyle = '#555';
       ctx.beginPath();
-      ctx.moveTo(-5, wobY - f.h / 2);
-      ctx.lineTo(5, wobY - f.h / 2 - 16);
-      ctx.lineTo(15, wobY - f.h / 2);
+      ctx.moveTo(-5, wobY - hh);
+      ctx.lineTo(5, wobY - hh - 16);
+      ctx.lineTo(15, wobY - hh);
       ctx.closePath();
       ctx.fill();
     }
