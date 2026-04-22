@@ -11,7 +11,7 @@
   #gameCanvas { position: absolute; z-index: 1; top: 0; left: 0; }
   #startScreen { position: absolute; z-index: 100; top: 0; left: 0; width: 100%; height: 100%; background: linear-gradient(180deg,#87CEEB 50%,#1a6fa8 100%); display: flex; flex-direction: column; align-items: center; justify-content: center; pointer-events: auto; }
   #startScreen h1 { font-size: 42px; color: #fff; text-shadow: 3px 3px 6px rgba(0,0,0,0.4); margin-bottom: 10px; }
-  #startScreen p { color: #ffe; font-size: 14px; margin-bottom: 20px; text-align: center; line-height: 1.6; }
+  #startScreen p { color: #ffe; font-size: 14px; margin-bottom: 20px; text-align: center; line-height: 1.8; }
   .bigBtn { background: linear-gradient(135deg,#ff9f43,#ee5a24); color: #fff; border: none; border-radius: 30px; padding: 14px 40px; font-size: 20px; cursor: pointer; box-shadow: 0 4px 12px rgba(0,0,0,0.3); transition: transform 0.1s; }
   .bigBtn:hover { transform: scale(1.05); }
   #overlay { position: absolute; z-index: 200; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.55); display: none; flex-direction: column; align-items: center; justify-content: center; pointer-events: auto; }
@@ -19,6 +19,9 @@
   #overlay p { color: #ffe; font-size: 16px; margin-bottom: 20px; }
   #hud { position: absolute; z-index: 50; top: 8px; left: 8px; color: #fff; font-size: 15px; text-shadow: 1px 1px 3px #000; pointer-events: none; }
   #hud span { margin-right: 14px; }
+  #waterBar { position: absolute; z-index: 50; bottom: 10px; left: 50%; transform: translateX(-50%); width: 160px; height: 16px; background: rgba(0,0,0,0.3); border-radius: 8px; display: none; pointer-events: none; }
+  #waterFill { height: 100%; width: 0%; background: linear-gradient(90deg,#00e5ff,#f44336); border-radius: 8px; transition: background 0.2s; }
+  #waterLabel { position: absolute; z-index: 51; bottom: 30px; left: 50%; transform: translateX(-50%); color: #fff; font-size: 12px; text-shadow: 1px 1px 2px #000; pointer-events: none; display: none; }
 </style>
 </head>
 <body>
@@ -28,12 +31,13 @@
     <span id="scoreHud">分数: 0</span>
     <span id="livesHud">❤️❤️❤️</span>
     <span id="levelHud">第1关</span>
-    <span id="waterHud"></span>
   </div>
+  <div id="waterLabel">💧 憋气中</div>
+  <div id="waterBar"><div id="waterFill"></div></div>
   <div id="startScreen">
     <h1>🦅 老鹰抓鱼</h1>
-    <p>用方向键控制老鹰抓鱼！<br>小鱼0.5分 中鱼1分 大鱼1.5分<br>⚠️ 避开鲨鱼！水下超过1秒要浮出水面</p>
-    <button class="bigBtn" id="startBtn">开始游戏</button>
+    <p>方向键控制老鹰抓鱼！<br>🐟 小鱼 0.5分 &nbsp; 🐠 中鱼 1分 &nbsp; 🐡 大鱼 1.5分<br>⚠️ 避开鲨鱼！水下超过1.5秒自动浮出<br>6分过一关 → 12分过二关 → 18分通关</p>
+    <button class="bigBtn" id="startBtn">开始游戏 🎮</button>
   </div>
   <div id="overlay">
     <h2 id="overlayTitle">🎉 恭喜过关！</h2>
@@ -48,10 +52,11 @@ document.addEventListener('DOMContentLoaded', function() {
   var W = canvas.width, H = canvas.height;
   var SEA_Y = 220;
 
+  // Game state variables
   var score = 0, lives = 3, level = 1, gameRunning = false;
   var returning = false;
   var waterTimer = 0;
-  var WATER_LIMIT = 1000;
+  var WATER_LIMIT = 1500; // 1.5 seconds in ms
 
   var eagle = { x: 300, y: 100, w: 50, h: 40, vx: 0, vy: 0, speed: 4, diving: false };
 
@@ -62,9 +67,13 @@ document.addEventListener('DOMContentLoaded', function() {
   for (var i = 0; i < 20; i++) waveOffsets.push(Math.random() * Math.PI * 2);
 
   var keys = {};
-  document.addEventListener('keydown', function(e) { keys[e.key] = true; e.preventDefault(); });
+  document.addEventListener('keydown', function(e) {
+    keys[e.key] = true;
+    if (['ArrowUp','ArrowDown','ArrowLeft','ArrowRight'].indexOf(e.key) >= 0) e.preventDefault();
+  });
   document.addEventListener('keyup', function(e) { keys[e.key] = false; });
 
+  // Fish types — speed same across all levels per spec
   var FISH_TYPES = [
     { size: 'small',  w: 22, h: 14, score: 0.5, color: '#f9ca24', speed: 1.2 },
     { size: 'medium', w: 34, h: 22, score: 1.0, color: '#6ab04c', speed: 0.9 },
@@ -73,9 +82,9 @@ document.addEventListener('DOMContentLoaded', function() {
   ];
 
   function spawnFish() {
-    var typeIdx = Math.random() < 0.15 ? 3 : Math.floor(Math.random() * 3);
+    var sharkChance = 0.10 + (level - 1) * 0.05;
+    var typeIdx = Math.random() < sharkChance ? 3 : Math.floor(Math.random() * 3);
     var t = FISH_TYPES[typeIdx];
-    // dir: 1 = moving right (spawns left), -1 = moving left (spawns right)
     var dir = Math.random() < 0.5 ? 1 : -1;
     fishes.push({
       x: dir === 1 ? -60 : W + 60,
@@ -87,17 +96,21 @@ document.addEventListener('DOMContentLoaded', function() {
   }
 
   function spawnCloud() {
-    clouds.push({ x: W + 80, y: 20 + Math.random() * 80, r: 30 + Math.random() * 40, speed: 0.3 + Math.random() * 0.4 });
+    clouds.push({
+      x: W + 80,
+      y: 20 + Math.random() * 90,
+      r: 28 + Math.random() * 38,
+      speed: 0.3 + Math.random() * 0.5
+    });
   }
 
   function spawnBird() {
-    // Birds fly left-to-right: spawn off left edge, move right
-    birds.push({ x: -30, y: 40 + Math.random() * 100, speed: 1 + Math.random() * 1.5, wing: 0 });
+    birds.push({ x: -30, y: 35 + Math.random() * 110, speed: 1 + Math.random() * 1.5, wing: 0 });
   }
 
   function spawnRain(count) {
     for (var i = 0; i < count; i++) {
-      raindrops.push({ x: Math.random() * W, y: Math.random() * H * 0.7, speed: 6 + Math.random() * 4 });
+      raindrops.push({ x: Math.random() * W, y: Math.random() * H * 0.7, speed: 5 + Math.random() * 4 });
     }
   }
 
@@ -105,34 +118,46 @@ document.addEventListener('DOMContentLoaded', function() {
     fishes = []; raindrops = []; particles = []; pushFishes = [];
     returning = false; waterTimer = 0;
     eagle.x = 300; eagle.y = 100; eagle.vx = 0; eagle.vy = 0; eagle.diving = false;
-    for (var i = 0; i < 6 + level; i++) spawnFish();
-    for (var j = 0; j < 4; j++) spawnCloud();
-    if (level >= 2) spawnBird();
-    if (level === 3) spawnRain(40);
+    for (var i = 0; i < 7 + level; i++) spawnFish();
+    // Clouds always present
+    if (clouds.length < 3) for (var j = 0; j < 4; j++) spawnCloud();
+    // Birds from level 1 onward
+    for (var k = 0; k < level + 1; k++) spawnBird();
+    // Rain increases with level
+    if (level === 2) spawnRain(25);
+    if (level === 3) spawnRain(55);
+    hideWaterBar();
   }
 
+  // ---- DRAWING ----
+
   function drawBackground() {
+    // Sky gradient — darker in rain levels
+    var skyTop = level === 3 ? '#4a6478' : (level === 2 ? '#6aaecc' : '#87CEEB');
+    var skyBot = level === 3 ? '#6a8a9a' : (level === 2 ? '#a8d8f0' : '#b3e5fc');
     var skyGrad = ctx.createLinearGradient(0, 0, 0, SEA_Y);
-    skyGrad.addColorStop(0, level === 3 ? '#546e7a' : '#87CEEB');
-    skyGrad.addColorStop(1, level === 3 ? '#78909c' : '#b3e5fc');
+    skyGrad.addColorStop(0, skyTop);
+    skyGrad.addColorStop(1, skyBot);
     ctx.fillStyle = skyGrad;
     ctx.fillRect(0, 0, W, SEA_Y);
 
+    // Sea gradient
     var seaGrad = ctx.createLinearGradient(0, SEA_Y, 0, H);
     seaGrad.addColorStop(0, '#0288d1');
     seaGrad.addColorStop(1, '#01579b');
     ctx.fillStyle = seaGrad;
     ctx.fillRect(0, SEA_Y, W, H - SEA_Y);
 
+    // Animated waves — bigger in higher levels
+    var waveAmp = 3 + level * 3;
     ctx.save();
-    ctx.strokeStyle = 'rgba(255,255,255,0.6)';
-    ctx.lineWidth = 2;
-    var waveAmp = 4 + level * 3;
     for (var w = 0; w < 3; w++) {
+      ctx.strokeStyle = 'rgba(255,255,255,' + (0.5 - w * 0.1) + ')';
+      ctx.lineWidth = 2;
       ctx.beginPath();
       for (var x = 0; x <= W; x += 5) {
-        var y2 = SEA_Y + w * 8 + Math.sin(x * 0.04 + waveOffsets[w] * 0.5) * waveAmp;
-        if (x === 0) ctx.moveTo(x, y2); else ctx.lineTo(x, y2);
+        var yw = SEA_Y + w * 9 + Math.sin(x * 0.04 + waveOffsets[w]) * waveAmp;
+        if (x === 0) ctx.moveTo(x, yw); else ctx.lineTo(x, yw);
       }
       ctx.stroke();
     }
@@ -140,114 +165,98 @@ document.addEventListener('DOMContentLoaded', function() {
   }
 
   function drawClouds(dt) {
+    // Wind speed increases with level
+    var windMult = 1 + (level - 1) * 0.7;
     ctx.save();
     for (var i = clouds.length - 1; i >= 0; i--) {
       var c = clouds[i];
-      c.x -= c.speed * (1 + (level - 1) * 0.5) * dt / 16;
-      if (c.x < -100) { clouds.splice(i, 1); spawnCloud(); continue; }
-      ctx.fillStyle = 'rgba(255,255,255,0.88)';
+      c.x -= c.speed * windMult * dt / 16;
+      if (c.x < -120) { clouds.splice(i, 1); spawnCloud(); continue; }
+      // Fluffy white cloud shape
+      ctx.fillStyle = level === 3 ? 'rgba(190,210,220,0.9)' : 'rgba(255,255,255,0.92)';
       ctx.beginPath();
       ctx.arc(c.x, c.y, c.r, 0, Math.PI * 2);
-      ctx.arc(c.x + c.r * 0.7, c.y - 10, c.r * 0.7, 0, Math.PI * 2);
-      ctx.arc(c.x - c.r * 0.6, c.y - 5, c.r * 0.6, 0, Math.PI * 2);
+      ctx.arc(c.x + c.r * 0.75, c.y - 8, c.r * 0.68, 0, Math.PI * 2);
+      ctx.arc(c.x - c.r * 0.65, c.y - 4, c.r * 0.58, 0, Math.PI * 2);
+      ctx.arc(c.x + c.r * 0.2, c.y - c.r * 0.6, c.r * 0.5, 0, Math.PI * 2);
       ctx.fill();
     }
     ctx.restore();
   }
 
-  // Draw bird always facing RIGHT (the direction it flies: left → right)
   function drawBirds(dt) {
     ctx.save();
     for (var i = birds.length - 1; i >= 0; i--) {
       var b = birds[i];
       b.x += b.speed * dt / 16;
       b.wing = (b.wing + 0.15) % (Math.PI * 2);
-      if (b.x > W + 50) { birds.splice(i, 1); if (Math.random() < 0.7) spawnBird(); continue; }
+      if (b.x > W + 60) { birds.splice(i, 1); continue; }
 
-      var wy = Math.sin(b.wing) * 8; // wing flap amount
-
+      var wy = Math.sin(b.wing) * 8;
       ctx.save();
       ctx.translate(b.x, b.y);
-      // Bird body (small oval)
+      // Body
       ctx.fillStyle = '#444';
-      ctx.beginPath();
-      ctx.ellipse(0, 0, 9, 5, 0, 0, Math.PI * 2);
-      ctx.fill();
-      // Head on the RIGHT (direction of travel)
+      ctx.beginPath(); ctx.ellipse(0, 0, 9, 5, 0, 0, Math.PI * 2); ctx.fill();
+      // Head (right = direction of travel)
       ctx.fillStyle = '#333';
-      ctx.beginPath();
-      ctx.arc(10, -2, 4, 0, Math.PI * 2);
-      ctx.fill();
-      // Beak pointing RIGHT
+      ctx.beginPath(); ctx.arc(10, -2, 4, 0, Math.PI * 2); ctx.fill();
+      // Beak
       ctx.fillStyle = '#e17055';
-      ctx.beginPath();
-      ctx.moveTo(14, -2);
-      ctx.lineTo(20, -1);
-      ctx.lineTo(14, 1);
-      ctx.closePath();
-      ctx.fill();
+      ctx.beginPath(); ctx.moveTo(14,-2); ctx.lineTo(20,-1); ctx.lineTo(14,1); ctx.closePath(); ctx.fill();
       // Eye
       ctx.fillStyle = '#fff';
-      ctx.beginPath(); ctx.arc(11, -3, 1.5, 0, Math.PI * 2); ctx.fill();
-      // Left wing (upper wing) — flaps upward
+      ctx.beginPath(); ctx.arc(11,-3,1.5,0,Math.PI*2); ctx.fill();
+      ctx.fillStyle = '#000';
+      ctx.beginPath(); ctx.arc(11,-3,0.8,0,Math.PI*2); ctx.fill();
+      // Upper wing
       ctx.fillStyle = '#555';
       ctx.beginPath();
-      ctx.moveTo(-2, -2);
-      ctx.quadraticCurveTo(-10, -12 - wy, -20, -4 - wy);
-      ctx.quadraticCurveTo(-10, 0, -2, 2);
-      ctx.closePath();
-      ctx.fill();
-      // Right wing (lower wing) — flaps downward (tail side)
+      ctx.moveTo(-2,-2);
+      ctx.quadraticCurveTo(-10,-12-wy,-20,-4-wy);
+      ctx.quadraticCurveTo(-10,0,-2,2);
+      ctx.closePath(); ctx.fill();
+      // Lower wing
       ctx.beginPath();
-      ctx.moveTo(-2, -2);
-      ctx.quadraticCurveTo(-8, 8 + wy * 0.5, -18, 6 + wy * 0.5);
-      ctx.quadraticCurveTo(-10, 0, -2, 2);
-      ctx.closePath();
-      ctx.fill();
-      // Tail feathers pointing LEFT (opposite to head)
+      ctx.moveTo(-2,-2);
+      ctx.quadraticCurveTo(-8,8+wy*0.5,-18,6+wy*0.5);
+      ctx.quadraticCurveTo(-10,0,-2,2);
+      ctx.closePath(); ctx.fill();
+      // Tail
       ctx.fillStyle = '#444';
       ctx.beginPath();
-      ctx.moveTo(-8, 0);
-      ctx.lineTo(-18, -5);
-      ctx.lineTo(-16, 0);
-      ctx.lineTo(-18, 5);
-      ctx.closePath();
-      ctx.fill();
-
+      ctx.moveTo(-8,0); ctx.lineTo(-18,-5); ctx.lineTo(-16,0); ctx.lineTo(-18,5); ctx.closePath(); ctx.fill();
       ctx.restore();
     }
     ctx.restore();
   }
 
   function drawRain(dt) {
-    if (level < 3) return;
-    var windX = 2 + (level - 1);
-    ctx.save(); ctx.strokeStyle = 'rgba(150,200,255,0.6)'; ctx.lineWidth = 1;
+    if (level < 2) return;
+    // Rain intensity per level
+    var windX = level === 2 ? 2 : 4;
+    var alpha = level === 2 ? 0.45 : 0.65;
+    ctx.save();
+    ctx.strokeStyle = 'rgba(150,200,255,' + alpha + ')';
+    ctx.lineWidth = 1;
     for (var i = 0; i < raindrops.length; i++) {
       var r = raindrops[i];
-      r.y += r.speed * dt / 16; r.x += windX * dt / 16;
+      r.y += r.speed * dt / 16;
+      r.x += windX * dt / 16;
       if (r.y > H) { r.y = -10; r.x = Math.random() * W; }
       ctx.beginPath(); ctx.moveTo(r.x, r.y); ctx.lineTo(r.x - windX, r.y - 10); ctx.stroke();
     }
     ctx.restore();
   }
 
-  // Draw fish facing the direction it swims.
-  // speed > 0 means moving RIGHT → face right.
-  // speed < 0 means moving LEFT  → face left.
   function drawFish(f, pushed) {
     ctx.save();
     ctx.translate(f.x, f.y);
-
-    // facingRight: fish moves right (speed > 0), so head is on RIGHT side.
-    // We draw the fish naturally facing right.
-    // If moving left (speed < 0) we flip with scale(-1,1) so it still faces its direction.
     var facingRight = f.speed >= 0;
-    if (!facingRight) ctx.scale(-1, 1); // flip so left-moving fish faces left
+    if (!facingRight) ctx.scale(-1, 1);
 
     f.wobble = (f.wobble + 0.05) % (Math.PI * 2);
     var wobY = pushed ? 0 : Math.sin(f.wobble) * 3;
-
     var hw = f.w / 2, hh = f.h / 2;
 
     // Body
@@ -256,89 +265,130 @@ document.addEventListener('DOMContentLoaded', function() {
     ctx.ellipse(0, wobY, hw, hh, 0, 0, Math.PI * 2);
     ctx.fill();
 
-    // Tail on the LEFT side (back of fish, opposite to head which faces right)
+    // Tail
     ctx.beginPath();
     ctx.moveTo(-hw, wobY);
     ctx.lineTo(-hw - 10, wobY - 8);
     ctx.lineTo(-hw - 10, wobY + 8);
-    ctx.closePath();
+    ctx.closePath(); ctx.fill();
+
+    // Belly highlight
+    ctx.fillStyle = 'rgba(255,255,255,0.3)';
+    ctx.beginPath();
+    ctx.ellipse(0, wobY + hh * 0.3, hw * 0.6, hh * 0.35, 0, 0, Math.PI * 2);
     ctx.fill();
 
-    // Eye on the RIGHT side (front/head of fish)
+    // Eye
     ctx.fillStyle = '#fff';
-    ctx.beginPath();
-    ctx.arc(hw * 0.55, wobY - hh * 0.25, 4, 0, Math.PI * 2);
-    ctx.fill();
+    ctx.beginPath(); ctx.arc(hw * 0.55, wobY - hh * 0.25, 4, 0, Math.PI * 2); ctx.fill();
     ctx.fillStyle = '#333';
-    ctx.beginPath();
-    ctx.arc(hw * 0.55, wobY - hh * 0.25, 2, 0, Math.PI * 2);
-    ctx.fill();
+    ctx.beginPath(); ctx.arc(hw * 0.55, wobY - hh * 0.25, 2, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#fff';
+    ctx.beginPath(); ctx.arc(hw * 0.55 + 1, wobY - hh * 0.25 - 1, 0.8, 0, Math.PI * 2); ctx.fill();
 
-    // Shark dorsal fin on top
+    // Shark dorsal fin
     if (f.type === 'shark') {
       ctx.fillStyle = '#555';
       ctx.beginPath();
       ctx.moveTo(-5, wobY - hh);
       ctx.lineTo(5, wobY - hh - 16);
       ctx.lineTo(15, wobY - hh);
-      ctx.closePath();
-      ctx.fill();
+      ctx.closePath(); ctx.fill();
     }
-
     ctx.restore();
   }
 
   function drawEagle() {
     ctx.save();
     ctx.translate(eagle.x, eagle.y);
+    var wingFlap = Math.sin(Date.now() / 110) * (returning ? 20 : 13);
+
+    // Shadow when over water
+    if (eagle.diving) {
+      ctx.save();
+      ctx.globalAlpha = 0.2;
+      ctx.fillStyle = '#000';
+      ctx.beginPath();
+      ctx.ellipse(0, 6, 22, 8, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+    }
+
+    // Wings
+    ctx.fillStyle = '#5D4037';
+    ctx.beginPath(); ctx.moveTo(0,-4); ctx.quadraticCurveTo(16,-22-wingFlap,30,-9); ctx.quadraticCurveTo(16,0,0,4); ctx.fill();
+    ctx.beginPath(); ctx.moveTo(0,-4); ctx.quadraticCurveTo(-12,-20-wingFlap,-24,-7); ctx.quadraticCurveTo(-12,2,0,4); ctx.fill();
+
     // Body
     ctx.fillStyle = '#8B4513';
     ctx.beginPath(); ctx.ellipse(0, 0, 22, 14, 0, 0, Math.PI * 2); ctx.fill();
-    // Head (left side = front of eagle facing left by default)
+
+    // White belly
+    ctx.fillStyle = 'rgba(255,255,255,0.5)';
+    ctx.beginPath(); ctx.ellipse(0, 4, 12, 7, 0, 0, Math.PI * 2); ctx.fill();
+
+    // Head (front = left)
     ctx.fillStyle = '#f9ca24';
     ctx.beginPath(); ctx.arc(-18, -6, 10, 0, Math.PI * 2); ctx.fill();
+
     // Beak
     ctx.fillStyle = '#e17055';
-    ctx.beginPath(); ctx.moveTo(-26, -6); ctx.lineTo(-34, -3); ctx.lineTo(-26, 0); ctx.closePath(); ctx.fill();
+    ctx.beginPath(); ctx.moveTo(-26,-6); ctx.lineTo(-35,-3); ctx.lineTo(-26,0); ctx.closePath(); ctx.fill();
+
     // Eye
-    ctx.fillStyle = '#333'; ctx.beginPath(); ctx.arc(-20, -8, 3, 0, Math.PI * 2); ctx.fill();
-    // Wings
-    var wingFlap = Math.sin(Date.now() / 120) * (returning ? 18 : 12);
-    ctx.fillStyle = '#5D4037';
-    ctx.beginPath(); ctx.moveTo(0, -4); ctx.quadraticCurveTo(15, -20 - wingFlap, 28, -8); ctx.quadraticCurveTo(15, 0, 0, 4); ctx.fill();
-    ctx.beginPath(); ctx.moveTo(0, -4); ctx.quadraticCurveTo(-10, -18 - wingFlap, -22, -6); ctx.quadraticCurveTo(-12, 2, 0, 4); ctx.fill();
+    ctx.fillStyle = '#333'; ctx.beginPath(); ctx.arc(-20,-8,3,0,Math.PI*2); ctx.fill();
+    ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(-19,-9,1.2,0,Math.PI*2); ctx.fill();
+
     ctx.restore();
   }
 
   function drawParticles(dt) {
     for (var i = particles.length - 1; i >= 0; i--) {
       var p = particles[i];
-      p.x += p.vx * dt / 16; p.y += p.vy * dt / 16; p.life -= dt;
-      p.vy += 0.2;
+      p.x += p.vx * dt / 16; p.y += p.vy * dt / 16;
+      p.vy += 0.15; p.life -= dt;
       if (p.life <= 0) { particles.splice(i, 1); continue; }
-      ctx.save(); ctx.globalAlpha = p.life / 2000;
-      ctx.fillStyle = p.color; ctx.font = p.size + 'px Arial';
+      ctx.save();
+      ctx.globalAlpha = Math.min(1, p.life / 800);
+      ctx.font = p.size + 'px Arial';
       ctx.fillText(p.char, p.x, p.y);
       ctx.restore();
     }
   }
 
+  // Score popup
+  function spawnScorePopup(x, y, val) {
+    particles.push({
+      x: x, y: y,
+      vx: (Math.random() - 0.5) * 2,
+      vy: -3,
+      life: 900,
+      char: '+' + val,
+      size: 18
+    });
+  }
+
   function spawnCelebration() {
     var chars = ['🐟','🐠','🐡','🎉','⭐','✨','🌟','🎊'];
     for (var i = 0; i < 40; i++) {
-      particles.push({ x: Math.random() * W, y: Math.random() * H,
+      particles.push({
+        x: Math.random() * W, y: Math.random() * H,
         vx: (Math.random() - 0.5) * 5, vy: -3 - Math.random() * 5,
-        life: 2000 + Math.random() * 1000, color: '#ff0',
-        char: chars[Math.floor(Math.random() * chars.length)], size: 18 + Math.floor(Math.random() * 18) });
+        life: 2200 + Math.random() * 1000,
+        char: chars[Math.floor(Math.random() * chars.length)],
+        size: 18 + Math.floor(Math.random() * 16)
+      });
     }
   }
 
+  // ---- UPDATES ----
+
   function updateFishes(dt) {
-    if (Math.random() < 0.012 * dt / 16 && fishes.length < 10 + level) spawnFish();
+    if (Math.random() < 0.013 * dt / 16 && fishes.length < 10 + level * 2) spawnFish();
     for (var i = fishes.length - 1; i >= 0; i--) {
       var f = fishes[i];
       f.x += f.speed * dt / 16;
-      if (f.x < -80 || f.x > W + 80) { fishes.splice(i, 1); continue; }
+      if (f.x < -90 || f.x > W + 90) { fishes.splice(i, 1); }
     }
   }
 
@@ -348,17 +398,20 @@ document.addEventListener('DOMContentLoaded', function() {
     for (var i = fishes.length - 1; i >= 0; i--) {
       var f = fishes[i];
       var dx = eagle.x - f.x, dy = eagle.y - f.y;
-      var dist = Math.sqrt(dx * dx + dy * dy);
-      if (dist < er + f.w / 2) {
+      if (Math.sqrt(dx * dx + dy * dy) < er + f.w / 2) {
         if (f.type === 'shark') {
           lives--;
           updateHUD();
           fishes.splice(i, 1);
+          // Red flash effect
+          particles.push({ x: eagle.x - 10, y: eagle.y - 10, vx: 0, vy: -2, life: 600, char: '💥', size: 28 });
           if (lives <= 0) { gameOver(); return; }
           returning = true; waterTimer = 0;
         } else {
-          score += f.score;
+          var gained = f.score;
+          score += gained;
           score = Math.round(score * 10) / 10;
+          spawnScorePopup(f.x, f.y - 20, gained);
           updateHUD();
           fishes.splice(i, 1);
           spawnFish();
@@ -371,21 +424,26 @@ document.addEventListener('DOMContentLoaded', function() {
     for (var i = pushFishes.length - 1; i >= 0; i--) {
       var pf = pushFishes[i];
       pf.y -= 4 * dt / 16;
-      if (pf.y < SEA_Y - 10) {
+      if (pf.y < SEA_Y + 10) {
+        // Bounce back into sea
         pf.y = SEA_Y + 30 + Math.random() * (H - SEA_Y - 60);
-        pf.speed *= -0.5 + Math.random();
-        if (pf.speed === 0) pf.speed = 0.8;
-        fishes.push(pf); pushFishes.splice(i, 1);
+        pf.speed = (Math.abs(pf.speed) + 0.5) * (Math.random() < 0.5 ? 1 : -1);
+        fishes.push(pf);
+        pushFishes.splice(i, 1);
       }
     }
   }
 
   function updateEagle(dt) {
     if (returning) {
-      eagle.vy = -4;
-      eagle.vx *= 0.9;
+      // Auto-surface
+      eagle.vy = -5;
+      eagle.vx *= 0.88;
       eagle.y += eagle.vy * dt / 16;
       eagle.x += eagle.vx * dt / 16;
+      eagle.x = Math.max(20, Math.min(W - 20, eagle.x));
+
+      // Push fish encountered while surfacing
       for (var i = fishes.length - 1; i >= 0; i--) {
         var f = fishes[i];
         var dx = eagle.x - f.x, dy = eagle.y - f.y;
@@ -395,6 +453,7 @@ document.addEventListener('DOMContentLoaded', function() {
       }
       if (eagle.y < SEA_Y - 20) {
         returning = false; waterTimer = 0; eagle.diving = false; eagle.vy = 0;
+        hideWaterBar();
       }
       return;
     }
@@ -402,10 +461,11 @@ document.addEventListener('DOMContentLoaded', function() {
     var spd = eagle.speed;
     if (keys['ArrowLeft'])       eagle.vx = -spd;
     else if (keys['ArrowRight']) eagle.vx =  spd;
-    else eagle.vx *= 0.85;
+    else eagle.vx *= 0.82;
+
     if (keys['ArrowUp'])         eagle.vy = -spd;
     else if (keys['ArrowDown'])  eagle.vy =  spd;
-    else eagle.vy *= 0.85;
+    else eagle.vy *= 0.82;
 
     eagle.x += eagle.vx * dt / 16;
     eagle.y += eagle.vy * dt / 16;
@@ -415,25 +475,45 @@ document.addEventListener('DOMContentLoaded', function() {
     if (eagle.y > SEA_Y) {
       eagle.diving = true;
       waterTimer += dt;
+      // Show water bar
+      var pct = Math.min(100, waterTimer / WATER_LIMIT * 100);
+      showWaterBar(pct);
       if (waterTimer >= WATER_LIMIT) { returning = true; waterTimer = 0; }
     } else {
       eagle.diving = false;
       waterTimer = 0;
+      hideWaterBar();
     }
+  }
+
+  function showWaterBar(pct) {
+    var bar = document.getElementById('waterBar');
+    var fill = document.getElementById('waterFill');
+    var lbl = document.getElementById('waterLabel');
+    if (bar) bar.style.display = 'block';
+    if (lbl) lbl.style.display = 'block';
+    if (fill) {
+      fill.style.width = pct + '%';
+      fill.style.background = pct > 70
+        ? 'linear-gradient(90deg,#f44336,#b71c1c)'
+        : 'linear-gradient(90deg,#00e5ff,#0288d1)';
+    }
+  }
+
+  function hideWaterBar() {
+    var bar = document.getElementById('waterBar');
+    var lbl = document.getElementById('waterLabel');
+    if (bar) bar.style.display = 'none';
+    if (lbl) lbl.style.display = 'none';
   }
 
   function updateHUD() {
     var scoreEl = document.getElementById('scoreHud');
     var livesEl = document.getElementById('livesHud');
     var levelEl = document.getElementById('levelHud');
-    var waterEl = document.getElementById('waterHud');
     if (scoreEl) scoreEl.textContent = '分数: ' + score;
     if (livesEl) livesEl.textContent = '❤️'.repeat(Math.max(0, lives));
     if (levelEl) levelEl.textContent = '第' + level + '关';
-    if (waterEl && eagle.diving && !returning) {
-      var pct = Math.min(100, (waterTimer / WATER_LIMIT * 100)).toFixed(0);
-      waterEl.textContent = '水下: ' + pct + '%';
-    } else if (waterEl) { waterEl.textContent = ''; }
   }
 
   function showOverlay(title, msg, btnText) {
@@ -472,9 +552,20 @@ document.addEventListener('DOMContentLoaded', function() {
     showOverlay('💔 游戏结束', '最终得分：' + score, '重新开始');
   }
 
+  // Periodically spawn birds to keep sky lively
+  setInterval(function() {
+    if (gameRunning && birds.length < 3 + level) spawnBird();
+  }, 2500);
+
+  // Keep clouds populated
+  setInterval(function() {
+    if (gameRunning && clouds.length < 5) spawnCloud();
+  }, 1500);
+
+  // ---- GAME LOOP ----
   var lastTime = 0;
   function gameLoop(ts) {
-    var dt = ts - lastTime || 16;
+    var dt = ts - (lastTime || ts);
     if (dt > 80) dt = 80;
     lastTime = ts;
 
@@ -487,16 +578,19 @@ document.addEventListener('DOMContentLoaded', function() {
     updateHUD();
     checkLevelUp();
 
-    for (var w = 0; w < waveOffsets.length; w++) waveOffsets[w] += 0.02 * (1 + (level - 1) * 0.5);
+    // Advance wave animation — faster in higher levels
+    for (var w = 0; w < waveOffsets.length; w++) waveOffsets[w] += 0.022 * (1 + (level - 1) * 0.6);
 
+    // Draw everything
     ctx.clearRect(0, 0, W, H);
     drawBackground();
     drawClouds(dt);
     drawBirds(dt);
     drawRain(dt);
 
+    // Draw fish (pushed fish surfacing, then regular fish)
     for (var i = 0; i < pushFishes.length; i++) drawFish(pushFishes[i], true);
-    for (var i = 0; i < fishes.length; i++) drawFish(fishes[i], false);
+    for (var j = 0; j < fishes.length; j++) drawFish(fishes[j], false);
 
     drawEagle();
     drawParticles(dt);
@@ -504,27 +598,34 @@ document.addEventListener('DOMContentLoaded', function() {
     requestAnimationFrame(gameLoop);
   }
 
-  setInterval(function() { if (gameRunning && level >= 2 && birds.length < 3) spawnBird(); }, 3000);
-
+  // ---- BUTTON LISTENERS ----
   var startBtn = document.getElementById('startBtn');
   if (startBtn) startBtn.addEventListener('click', function() {
-    document.getElementById('startScreen').style.display = 'none';
+    var ss = document.getElementById('startScreen');
+    if (ss) ss.style.display = 'none';
     score = 0; lives = 3; level = 1;
-    initLevel(); updateHUD();
+    clouds = []; birds = [];
+    for (var j = 0; j < 5; j++) spawnCloud();
+    initLevel();
+    updateHUD();
     gameRunning = true;
   });
 
   var overlayBtn = document.getElementById('overlayBtn');
   if (overlayBtn) overlayBtn.addEventListener('click', function() {
     hideOverlay();
-    var title = document.getElementById('overlayTitle').textContent;
-    if (title.includes('游戏结束') || title.includes('Congratulations')) {
+    var title = document.getElementById('overlayTitle');
+    if (title && (title.textContent.includes('游戏结束') || title.textContent.includes('Congratulations'))) {
       score = 0; lives = 3; level = 1;
-      initLevel(); updateHUD();
+      clouds = []; birds = [];
+      for (var j = 0; j < 5; j++) spawnCloud();
+      initLevel();
+      updateHUD();
     }
     gameRunning = true;
   });
 
+  // Start the render loop immediately (draws nothing until gameRunning=true)
   requestAnimationFrame(gameLoop);
 
   // BUTTON CHECKLIST: #startBtn ✓  #overlayBtn ✓
