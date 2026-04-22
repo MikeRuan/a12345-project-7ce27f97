@@ -3,366 +3,461 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Click the Target!</title>
+<title>Eagle Fisher 🦅</title>
 <style>
-  * { margin: 0; padding: 0; box-sizing: border-box; }
-  body {
-    background: linear-gradient(135deg, #667eea, #764ba2);
-    min-height: 100vh;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-family: Arial, sans-serif;
-    overflow: hidden;
-  }
-  #gameContainer {
-    position: relative;
-    width: 600px;
-    height: 520px;
-    background: linear-gradient(180deg, #1a1a2e, #16213e);
-    border-radius: 24px;
-    box-shadow: 0 12px 40px rgba(0,0,0,0.5);
-    overflow: hidden;
-  }
-  /* Score bar at the top */
-  #hud {
-    position: absolute;
-    top: 0; left: 0;
-    width: 100%;
-    padding: 16px 24px;
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    z-index: 10;
-    background: rgba(255,255,255,0.07);
-  }
-  #scoreDisplay {
-    font-size: 28px;
-    font-weight: bold;
-    color: #ffe66d;
-    text-shadow: 0 0 12px #ffe66d88;
-  }
-  #progressBar {
-    flex: 1;
-    margin: 0 20px;
-    height: 18px;
-    background: rgba(255,255,255,0.15);
-    border-radius: 9px;
-    overflow: hidden;
-  }
-  #progressFill {
-    height: 100%;
-    width: 0%;
-    background: linear-gradient(90deg, #43e97b, #ffe66d, #f9ca24);
-    border-radius: 9px;
-    transition: width 0.2s ease;
-  }
-  #goalDisplay {
-    font-size: 18px;
-    color: #aaa;
-  }
-  /* The play area where the target appears */
-  #playArea {
-    position: absolute;
-    top: 70px; left: 0;
-    width: 100%;
-    height: 450px;
-    z-index: 5;
-  }
-  /* The clickable target */
-  #target {
-    position: absolute;
-    width: 80px;
-    height: 80px;
-    border-radius: 50%;
-    cursor: pointer;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 38px;
-    /* Pulse animation */
-    animation: pulse 0.7s ease-in-out infinite alternate;
-    box-shadow: 0 0 24px 6px rgba(255,255,255,0.25);
-    user-select: none;
-    transition: transform 0.08s;
-    z-index: 6;
-    /* Start hidden — shown when game starts */
-    display: none;
-  }
-  #target:active { transform: scale(0.88); }
-  @keyframes pulse {
-    from { box-shadow: 0 0 16px 4px rgba(255,255,100,0.3); transform: scale(1); }
-    to   { box-shadow: 0 0 32px 10px rgba(255,200,0,0.55); transform: scale(1.08); }
-  }
-  /* Start screen */
-  #startScreen {
-    position: absolute;
-    z-index: 100;
-    top: 0; left: 0;
-    width: 100%; height: 100%;
-    background: linear-gradient(180deg, #1a1a2e, #16213e);
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    pointer-events: auto;
-  }
-  #startScreen h1 {
-    font-size: 46px;
-    color: #ffe66d;
-    text-shadow: 0 0 20px #ffe66daa;
-    margin-bottom: 12px;
-  }
-  #startScreen p {
-    font-size: 20px;
-    color: #ccc;
-    margin-bottom: 36px;
-    text-align: center;
-    line-height: 1.7;
-  }
-  /* Win overlay */
-  #winScreen {
-    position: absolute;
-    z-index: 200;
-    top: 0; left: 0;
-    width: 100%; height: 100%;
-    background: rgba(0,0,0,0.75);
-    display: none;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    pointer-events: auto;
-  }
-  #winScreen h2 {
-    font-size: 52px;
-    color: #ffe66d;
-    text-shadow: 0 0 24px #ffe66d;
-    margin-bottom: 14px;
-    animation: bounce 0.5s ease infinite alternate;
-  }
-  @keyframes bounce {
-    from { transform: translateY(0); }
-    to   { transform: translateY(-10px); }
-  }
-  #winScreen p {
-    font-size: 22px;
-    color: #fff;
-    margin-bottom: 32px;
-  }
-  /* Shared big button style */
-  .bigBtn {
-    background: linear-gradient(135deg, #f9ca24, #f0932b);
-    color: #1a1a2e;
-    border: none;
-    border-radius: 50px;
-    padding: 16px 48px;
-    font-size: 22px;
-    font-weight: bold;
-    cursor: pointer;
-    box-shadow: 0 6px 20px rgba(249,202,36,0.45);
-    transition: transform 0.1s, box-shadow 0.1s;
-  }
-  .bigBtn:hover {
-    transform: scale(1.07);
-    box-shadow: 0 8px 28px rgba(249,202,36,0.65);
-  }
-  /* Score pop-up text that floats up */
-  .popup {
-    position: absolute;
-    font-size: 26px;
-    font-weight: bold;
-    color: #ffe66d;
-    text-shadow: 0 0 8px #000;
-    pointer-events: none;
-    z-index: 50;
-    animation: floatUp 0.9s ease forwards;
-  }
-  @keyframes floatUp {
-    0%   { opacity: 1; transform: translateY(0) scale(1.2); }
-    100% { opacity: 0; transform: translateY(-70px) scale(0.8); }
-  }
-  /* Star confetti pieces */
-  .confetti {
-    position: absolute;
-    font-size: 22px;
-    pointer-events: none;
-    z-index: 300;
-    animation: fall 1.6s ease forwards;
-  }
-  @keyframes fall {
-    0%   { opacity: 1; transform: translateY(0) rotate(0deg); }
-    100% { opacity: 0; transform: translateY(200px) rotate(360deg); }
-  }
+* { margin:0; padding:0; box-sizing:border-box; }
+body {
+  background: #87CEEB;
+  display: flex; align-items: center; justify-content: center;
+  min-height: 100vh; font-family: Arial, sans-serif; overflow: hidden;
+}
+#gameContainer {
+  position: relative; width: 600px; height: 550px;
+  border-radius: 20px; overflow: hidden;
+  box-shadow: 0 12px 40px rgba(0,0,0,0.5);
+}
+canvas { position: absolute; top:0; left:0; z-index:1; }
+#hud {
+  position: absolute; top:0; left:0; width:100%; padding:8px 16px;
+  display: flex; align-items: center; justify-content: space-between;
+  z-index: 10; background: rgba(0,0,0,0.25); pointer-events: none;
+}
+#hud span { color:#fff; font-size:16px; font-weight:bold; text-shadow:0 1px 3px #000; }
+#progressBar {
+  flex:1; margin:0 12px; height:14px;
+  background:rgba(255,255,255,0.25); border-radius:7px; overflow:hidden;
+}
+#progressFill {
+  height:100%; width:0%;
+  background: linear-gradient(90deg,#43e97b,#ffe66d);
+  border-radius:7px; transition: width 0.2s;
+}
+#overlay {
+  position: absolute; top:0; left:0; width:100%; height:100%;
+  z-index: 100; display:flex; flex-direction:column;
+  align-items:center; justify-content:center;
+  background: linear-gradient(180deg,#87CEEB 40%,#1a6ba0);
+  pointer-events: auto;
+}
+#overlay h1 { font-size:44px; color:#fff; text-shadow:0 2px 8px #0005; margin-bottom:8px; }
+#overlay p  { font-size:16px; color:#fff; text-align:center; line-height:1.7;
+               margin-bottom:28px; padding:0 20px; text-shadow:0 1px 4px #0006; }
+.bigBtn {
+  background: linear-gradient(135deg,#f9ca24,#f0932b);
+  color:#1a1a2e; border:none; border-radius:50px;
+  padding:14px 44px; font-size:20px; font-weight:bold;
+  cursor:pointer; box-shadow:0 6px 20px rgba(249,202,36,0.5);
+  transition: transform 0.1s; margin:6px;
+}
+.bigBtn:hover { transform:scale(1.07); }
+#msgBox {
+  position:absolute; top:55px; left:50%; transform:translateX(-50%);
+  background:rgba(0,0,0,0.6); color:#ffe66d; font-size:18px; font-weight:bold;
+  padding:8px 22px; border-radius:20px; z-index:20; display:none;
+  pointer-events:none; white-space:nowrap;
+}
 </style>
 </head>
 <body>
 <div id="gameContainer">
-
-  <!-- HUD (score bar) — shown during gameplay -->
+  <canvas id="c" width="600" height="550"></canvas>
   <div id="hud">
-    <div id="scoreDisplay">⭐ 0</div>
+    <span id="livesDisplay">❤️❤️❤️</span>
     <div id="progressBar"><div id="progressFill"></div></div>
-    <div id="goalDisplay">Goal: 20</div>
+    <span id="scoreDisplay">⭐0 L1</span>
   </div>
-
-  <!-- Play area -->
-  <div id="playArea">
-    <!-- The clickable target emoji -->
-    <div id="target">🎯</div>
+  <div id="msgBox"></div>
+  <div id="overlay">
+    <h1>🦅 Eagle Fisher</h1>
+    <p>用方向键或 WASD 控制老鹰！<br>
+       抓鱼得分，避开🦈鲨鱼！<br>
+       水下超过1.5秒自动返回水面 🌊<br>
+       <b>大鱼+1.5 中鱼+1 小鱼+0.5</b><br>
+       每6分升一关，共三关！</p>
+    <button class="bigBtn" id="startBtn">开始游戏 🚀</button>
   </div>
-
-  <!-- Start screen -->
-  <div id="startScreen">
-    <h1>🎯 Click It!</h1>
-    <p>Click the target as fast as you can!<br>Reach <strong style="color:#ffe66d">20 clicks</strong> to win! 🏆</p>
-    <button class="bigBtn" id="startBtn">Play! 🚀</button>
-  </div>
-
-  <!-- Win screen -->
-  <div id="winScreen">
-    <h2>🏆 You Win!</h2>
-    <p id="winMsg">You clicked 20 times! Amazing!</p>
-    <button class="bigBtn" id="restartBtn">Play Again 🔄</button>
-  </div>
-
 </div>
-
 <script>
 document.addEventListener('DOMContentLoaded', function() {
+  var canvas = document.getElementById('c');
+  var ctx = canvas.getContext('2d');
+  var W = 600, H = 550, WATER_Y = 260;
 
-  // --- Get all the elements we need ---
-  var target      = document.getElementById('target');
-  var startScreen = document.getElementById('startScreen');
-  var winScreen   = document.getElementById('winScreen');
-  var scoreDisplay= document.getElementById('scoreDisplay');
-  var progressFill= document.getElementById('progressFill');
-  var winMsg      = document.getElementById('winMsg');
-  var playArea    = document.getElementById('playArea');
+  // HUD elements
+  var livesEl = document.getElementById('livesDisplay');
+  var scoreEl = document.getElementById('scoreDisplay');
+  var progFill = document.getElementById('progressFill');
+  var overlay  = document.getElementById('overlay');
+  var msgBox   = document.getElementById('msgBox');
 
-  // --- Game state ---
-  var score = 0;
-  var WIN_SCORE = 20;
-  var gameActive = false;
+  // Game state
+  var score=0, lives=3, level=1, gameActive=false;
+  var LEVEL_SCORES=[0,6,12,18];
+  var eagle={x:300,y:150,w:54,h:44,vx:0,vy:0,inWater:false,waterTimer:0,returning:false,invincible:0};
+  var keys={};
+  var clouds=[], birds=[], raindrops=[], fishArr=[], waves=[], windX=0;
+  var frameCount=0;
+  var msgTimer=0;
 
-  // Emoji choices so the target keeps things interesting
-  var emojis = ['🎯','🌟','🔥','💎','🍭','🎪','⚡','🌈'];
+  // Fish types
+  var FISH_TYPES=[
+    {size:'big',  pts:1.5, w:52, h:32, emoji:'🐟', speed:1.2},
+    {size:'mid',  pts:1.0, w:38, h:24, emoji:'🐠', speed:1.6},
+    {size:'small',pts:0.5, w:26, h:18, emoji:'🐡', speed:2.0},
+    {size:'shark',pts:0,   w:60, h:36, emoji:'🦈', speed:1.4}
+  ];
 
-  // --- Helper: place the target at a random spot inside playArea ---
-  function moveTarget() {
-    var areaW = playArea.offsetWidth;
-    var areaH = playArea.offsetHeight;
-    var size  = 80; // matches CSS width/height
-    var padding = 10;
-    var newX = padding + Math.random() * (areaW - size - padding * 2);
-    var newY = padding + Math.random() * (areaH - size - padding * 2);
-    target.style.left = newX + 'px';
-    target.style.top  = newY + 'px';
-    // Pick a random fun color background
-    var colors = [
-      'linear-gradient(135deg,#f9ca24,#f0932b)',
-      'linear-gradient(135deg,#6ab04c,#badc58)',
-      'linear-gradient(135deg,#e84393,#fd79a8)',
-      'linear-gradient(135deg,#00cec9,#55efc4)',
-      'linear-gradient(135deg,#a29bfe,#6c5ce7)',
-      'linear-gradient(135deg,#fd79a8,#e17055)',
-      'linear-gradient(135deg,#fdcb6e,#e17055)'
-    ];
-    target.style.background = colors[Math.floor(Math.random() * colors.length)];
-    // Pick a random emoji
-    target.textContent = emojis[Math.floor(Math.random() * emojis.length)];
+  function resetLevel() {
+    fishArr=[];
+    for(var i=0;i<10;i++) spawnFish();
   }
 
-  // --- Helper: update the score display and progress bar ---
-  function updateHUD() {
-    scoreDisplay.textContent = '⭐ ' + score;
-    var pct = (score / WIN_SCORE) * 100;
-    progressFill.style.width = pct + '%';
+  function spawnFish() {
+    var t = FISH_TYPES[Math.floor(Math.random()*FISH_TYPES.length)];
+    var fromLeft = Math.random()<0.5;
+    fishArr.push({
+      x: fromLeft ? -t.w-10 : W+10,
+      y: WATER_Y+30+Math.random()*(H-WATER_Y-t.h-30),
+      w: t.w, h: t.h, emoji: t.emoji, pts: t.pts,
+      size: t.size,
+      vx: (fromLeft?1:-1)*(t.speed + (level-1)*0.0),
+      vy: (Math.random()-0.5)*0.4,
+      popped: false, popTimer: 0
+    });
   }
 
-  // --- Helper: spawn a "+1" floating popup at click position ---
-  function spawnPopup(x, y) {
-    var pop = document.createElement('div');
-    pop.className = 'popup';
-    pop.textContent = '+1';
-    // Position relative to playArea
-    pop.style.left = (x - 20) + 'px';
-    pop.style.top  = (y - 20) + 'px';
-    playArea.appendChild(pop);
-    // Remove after animation ends
-    pop.addEventListener('animationend', function() { pop.remove(); });
+  function initClouds() {
+    clouds=[];
+    for(var i=0;i<6;i++) clouds.push({x:Math.random()*W,y:30+Math.random()*80,w:80+Math.random()*60,speed:0.3+Math.random()*0.4});
+  }
+  function initBirds() {
+    birds=[];
+    for(var i=0;i<4;i++) birds.push({x:Math.random()*W,y:20+Math.random()*60,wingUp:Math.random()<0.5,wingTimer:0,speed:0.6+Math.random()*0.5});
+  }
+  function initWaves() {
+    waves=[];
+    for(var i=0;i<8;i++) waves.push({x:i*(W/7),speed:1+Math.random()*0.5});
   }
 
-  // --- Helper: burst of confetti on win ---
-  function spawnConfetti() {
-    var pieces = ['🌟','⭐','🎉','✨','🏆','🎊','💛','🔥'];
-    for (var i = 0; i < 30; i++) {
-      (function(i) {
-        setTimeout(function() {
-          var el = document.createElement('div');
-          el.className = 'confetti';
-          el.textContent = pieces[Math.floor(Math.random() * pieces.length)];
-          el.style.left = (Math.random() * 560) + 'px';
-          el.style.top  = (Math.random() * 100) + 'px';
-          el.style.animationDelay = (Math.random() * 0.4) + 's';
-          winScreen.appendChild(el);
-          el.addEventListener('animationend', function() { el.remove(); });
-        }, i * 60);
-      })(i);
-    }
-  }
-
-  // --- Start the game ---
   function startGame() {
-    score = 0;
-    gameActive = true;
+    score=0; lives=3; level=1; gameActive=true;
+    eagle={x:300,y:150,w:54,h:44,vx:0,vy:0,inWater:false,waterTimer:0,returning:false,invincible:0};
+    overlay.style.display='none';
+    initClouds(); initBirds(); initWaves();
+    resetLevel();
     updateHUD();
-    startScreen.style.display = 'none';
-    winScreen.style.display   = 'none';
-    target.style.display      = 'flex'; // show the target
-    moveTarget();
+    requestAnimationFrame(loop);
   }
 
-  // --- Show win screen ---
-  function showWin() {
-    gameActive = false;
-    target.style.display = 'none';
-    winMsg.textContent = 'You clicked ' + WIN_SCORE + ' times! Amazing! 🎉';
-    winScreen.style.display = 'flex';
-    spawnConfetti();
+  function showMsg(txt, dur) {
+    msgBox.textContent=txt; msgBox.style.display='block'; msgTimer=dur||90;
   }
 
-  // --- Target click handler ---
-  target.addEventListener('click', function(e) {
-    if (!gameActive) return;
-    score++;
-    updateHUD();
+  function updateHUD() {
+    var h=''; for(var i=0;i<lives;i++) h+='❤️'; livesEl.textContent=h||'💀';
+    scoreEl.textContent='⭐'+score.toFixed(1)+' L'+level;
+    var base=LEVEL_SCORES[level-1], need=LEVEL_SCORES[level];
+    var pct=Math.min(100,((score-base)/(need-base))*100);
+    progFill.style.width=pct+'%';
+  }
 
-    // Calculate click position relative to playArea for the popup
-    var rect = playArea.getBoundingClientRect();
-    var clickX = e.clientX - rect.left;
-    var clickY = e.clientY - rect.top;
-    spawnPopup(clickX, clickY);
+  function getWindStrength() { return level*0.8; }
+  function getRainRate()     { return level*3; }
+  function getWaveAmp()      { return 6+level*5; }
 
-    if (score >= WIN_SCORE) {
-      showWin();
-    } else {
-      moveTarget(); // jump to new spot
+  // Draw sky gradient
+  function drawSky() {
+    var g=ctx.createLinearGradient(0,0,0,WATER_Y);
+    g.addColorStop(0,'#87CEEB'); g.addColorStop(1,'#c9eaf7');
+    ctx.fillStyle=g; ctx.fillRect(0,0,W,WATER_Y);
+  }
+
+  // Draw ocean
+  function drawOcean() {
+    var g=ctx.createLinearGradient(0,WATER_Y,0,H);
+    g.addColorStop(0,'#1a78c2'); g.addColorStop(1,'#0a3d6b');
+    ctx.fillStyle=g; ctx.fillRect(0,WATER_Y,W,H-WATER_Y);
+  }
+
+  // Draw animated water surface
+  function drawWaterSurface() {
+    ctx.beginPath(); ctx.moveTo(0,WATER_Y);
+    var amp=getWaveAmp();
+    for(var x=0;x<=W;x+=4) {
+      var y=WATER_Y+Math.sin((x+frameCount*2)*0.035)*amp*0.6
+              +Math.sin((x+frameCount*1.3)*0.07)*amp*0.4;
+      ctx.lineTo(x,y);
     }
+    ctx.lineTo(W,H); ctx.lineTo(0,H); ctx.closePath();
+    ctx.fillStyle='rgba(30,120,210,0.55)'; ctx.fill();
+    ctx.strokeStyle='rgba(255,255,255,0.5)'; ctx.lineWidth=2; ctx.stroke();
+  }
+
+  // Waves on surface
+  function drawWaves() {
+    waves.forEach(function(w) {
+      w.x += w.speed*(1+getWindStrength()*0.1);
+      if(w.x>W+60) w.x=-60;
+      ctx.strokeStyle='rgba(255,255,255,0.55)';
+      ctx.lineWidth=2.5; ctx.beginPath();
+      ctx.arc(w.x,WATER_Y+getWaveAmp()*0.4,14,Math.PI,0);
+      ctx.stroke();
+      ctx.beginPath(); ctx.arc(w.x+20,WATER_Y+getWaveAmp()*0.2,8,Math.PI,0); ctx.stroke();
+    });
+  }
+
+  // Clouds
+  function drawClouds() {
+    clouds.forEach(function(cl) {
+      cl.x += cl.speed*(1+getWindStrength()*0.3);
+      if(cl.x > W+cl.w) cl.x = -cl.w;
+      ctx.fillStyle='rgba(255,255,255,0.88)';
+      var cx=cl.x, cy=cl.y, cw=cl.w;
+      ctx.beginPath(); ctx.ellipse(cx,cy,cw/2,18,0,0,Math.PI*2); ctx.fill();
+      ctx.beginPath(); ctx.ellipse(cx-cw*0.2,cy+5,cw*0.3,14,0,0,Math.PI*2); ctx.fill();
+      ctx.beginPath(); ctx.ellipse(cx+cw*0.2,cy+5,cw*0.3,14,0,0,Math.PI*2); ctx.fill();
+    });
+  }
+
+  // Birds
+  function drawBirds() {
+    birds.forEach(function(b) {
+      b.x += b.speed*(1+getWindStrength()*0.2);
+      if(b.x>W+20) b.x=-20;
+      b.wingTimer++;
+      if(b.wingTimer>12){b.wingUp=!b.wingUp;b.wingTimer=0;}
+      ctx.strokeStyle='#444'; ctx.lineWidth=2; ctx.beginPath();
+      if(b.wingUp){ctx.moveTo(b.x-10,b.y);ctx.quadraticCurveTo(b.x-5,b.y-7,b.x,b.y);}
+      else{ctx.moveTo(b.x-10,b.y);ctx.quadraticCurveTo(b.x-5,b.y+3,b.x,b.y);}
+      if(b.wingUp){ctx.moveTo(b.x,b.y);ctx.quadraticCurveTo(b.x+5,b.y-7,b.x+10,b.y);}
+      else{ctx.moveTo(b.x,b.y);ctx.quadraticCurveTo(b.x+5,b.y+3,b.x+10,b.y);}
+      ctx.stroke();
+    });
+  }
+
+  // Rain
+  function drawRain() {
+    for(var i=0;i<getRainRate();i++) {
+      raindrops.push({x:Math.random()*W,y:-5,len:8+Math.random()*6});
+    }
+    ctx.strokeStyle='rgba(150,200,255,0.6)'; ctx.lineWidth=1.5;
+    for(var i=raindrops.length-1;i>=0;i--) {
+      var d=raindrops[i];
+      d.x+=getWindStrength()*0.8; d.y+=9;
+      ctx.beginPath(); ctx.moveTo(d.x,d.y); ctx.lineTo(d.x-getWindStrength()*0.3,d.y+d.len); ctx.stroke();
+      if(d.y>H) raindrops.splice(i,1);
+    }
+  }
+
+  // Fish
+  function drawFish() {
+    fishArr.forEach(function(f) {
+      if(f.popped) {
+        // Fish rising to surface then falling
+        f.y -= 3; f.popTimer--;
+        if(f.y < WATER_Y+10) { f.vy=1.5; f.popped=false; }
+      } else {
+        f.x += f.vx; f.y += f.vy;
+        if(f.y<WATER_Y+5) { f.y=WATER_Y+5; f.vy=Math.abs(f.vy); }
+        if(f.y>H-f.h-5)   { f.y=H-f.h-5;  f.vy=-Math.abs(f.vy); }
+        if(f.x<-f.w-20)   { f.x=W+10; f.y=WATER_Y+20+Math.random()*(H-WATER_Y-f.h-30); }
+        if(f.x>W+20)      { f.x=-f.w-10; f.y=WATER_Y+20+Math.random()*(H-WATER_Y-f.h-30); }
+      }
+      ctx.font=f.h+'px serif';
+      ctx.save();
+      if(f.vx<0){ ctx.translate(f.x+f.w,f.y); ctx.scale(-1,1); ctx.fillText(f.emoji,0,f.h); }
+      else       { ctx.fillText(f.emoji,f.x,f.y+f.h*0.9); }
+      ctx.restore();
+    });
+  }
+
+  // Eagle
+  function drawEagle() {
+    var e=eagle;
+    ctx.save();
+    if(e.invincible>0 && Math.floor(e.invincible/5)%2===0) { ctx.globalAlpha=0.4; }
+    ctx.font=e.h+'px serif';
+    // Flip if moving left
+    if(e.vx<0){ ctx.translate(e.x+e.w,e.y+e.h); ctx.scale(-1,-1); ctx.fillText('🦅',0,0); }
+    else       { ctx.fillText('🦅',e.x,e.y+e.h); }
+    ctx.restore();
+    // Underwater timer bar
+    if(e.inWater && !e.returning) {
+      var pct=Math.min(1,e.waterTimer/90);
+      ctx.fillStyle='rgba(0,0,0,0.4)';
+      ctx.fillRect(e.x,e.y-8,e.w,6);
+      ctx.fillStyle=pct<0.6?'#43e97b':'#e74c3c';
+      ctx.fillRect(e.x,e.y-8,e.w*pct,6);
+    }
+  }
+
+  function updateEagle() {
+    var e=eagle;
+    var spd=3.5;
+    var wx=getWindStrength();
+
+    // If returning, fly up automatically
+    if(e.returning) {
+      e.vy=-4; e.vx*=0.9;
+      e.x+=e.vx; e.y+=e.vy;
+      if(e.y < WATER_Y-50) { e.returning=false; e.inWater=false; e.waterTimer=0; }
+      e.x=Math.max(0,Math.min(W-e.w,e.x));
+      if(e.invincible>0) e.invincible--;
+      return;
+    }
+
+    e.vx=0; e.vy=0;
+    if(keys['ArrowLeft']||keys['a']||keys['A'])  e.vx=-spd;
+    if(keys['ArrowRight']||keys['d']||keys['D']) e.vx=spd;
+    if(keys['ArrowUp']||keys['w']||keys['W'])    e.vy=-spd;
+    if(keys['ArrowDown']||keys['s']||keys['S'])  e.vy=spd;
+
+    // Wind effect in sky
+    if(!e.inWater) e.vx+=wx*0.15*(level===3?1.5:1);
+
+    e.x+=e.vx; e.y+=e.vy;
+
+    // Boundaries
+    e.x=Math.max(0,Math.min(W-e.w,e.x));
+    e.y=Math.max(0,Math.min(H-e.h,e.y));
+
+    // Water detection
+    if(e.y+e.h > WATER_Y) { e.inWater=true; }
+    else { e.inWater=false; e.waterTimer=0; }
+
+    if(e.inWater) {
+      e.waterTimer++;
+      if(e.waterTimer>=90) { // 1.5s at 60fps
+        e.returning=true;
+        e.invincible=80;
+        showMsg('🌊 返回水面！', 60);
+      }
+    }
+
+    if(e.invincible>0) e.invincible--;
+  }
+
+  function checkCollisions() {
+    var e=eagle;
+    for(var i=fishArr.length-1;i>=0;i--) {
+      var f=fishArr[i];
+      if(f.popped) continue;
+      // AABB
+      if(e.x<f.x+f.w && e.x+e.w>f.x && e.y<f.y+f.h && e.y+e.h>f.y) {
+        if(e.returning) {
+          // Push fish up to surface
+          f.popped=true; f.popTimer=40;
+          continue;
+        }
+        if(e.invincible>0) continue;
+        if(f.size==='shark') {
+          lives--; updateHUD();
+          e.invincible=120;
+          showMsg('🦈 被鲨鱼咬了！-1条命', 90);
+          if(lives<=0) { gameOver(); return; }
+        } else {
+          // Catch fish
+          score+=f.pts; updateHUD();
+          fishArr.splice(i,1); spawnFish();
+          var label = f.pts===1.5?'大鱼':'（f.pts===1?'中鱼':'小鱼'）';
+          showMsg((f.pts===1.5?'🐟大鱼':f.pts===1?'🐠中鱼':'🐡小鱼')+' +'+f.pts+'分！',50);
+          checkLevelUp();
+        }
+      }
+    }
+  }
+
+  function checkLevelUp() {
+    if(level<3 && score>=LEVEL_SCORES[level]) {
+      level++;
+      showMsg('🎉 升到第'+level+'关！难度加大！',120);
+      resetLevel();
+      updateHUD();
+    } else if(level===3 && score>=18) {
+      gameWin();
+    }
+  }
+
+  function gameOver() {
+    gameActive=false;
+    setTimeout(function(){
+      var o=overlay; o.style.display='flex';
+      o.innerHTML='<h1 style="color:#ff6b6b">💀 游戏结束</h1>'+
+        '<p style="color:#fff">最终得分：<b style="color:#ffe66d">'+score.toFixed(1)+'分</b><br>共到达第'+level+'关</p>'+
+        '<button class="bigBtn" id="startBtn">再玩一次 🔄</button>';
+      var sb=document.getElementById('startBtn');
+      if(sb) sb.addEventListener('click',startGame);
+    },600);
+  }
+
+  function gameWin() {
+    gameActive=false;
+    setTimeout(function(){
+      var o=overlay; o.style.display='flex';
+      o.innerHTML='<h1 style="color:#ffe66d">🏆 你赢了！</h1>'+
+        '<p style="color:#fff">太厉害了！得了<b style="color:#ffe66d">'+score.toFixed(1)+'分</b>，<br>通关全部三关！🎉🦅🎉</p>'+
+        '<button class="bigBtn" id="startBtn">再玩一次 🔄</button>';
+      var sb=document.getElementById('startBtn');
+      if(sb) sb.addEventListener('click',startGame);
+    },600);
+  }
+
+  // Main game loop
+  function loop() {
+    if(!gameActive) return;
+    frameCount++;
+    ctx.clearRect(0,0,W,H);
+
+    drawSky();
+    drawClouds();
+    drawBirds();
+    drawRain();
+    drawOcean();
+    drawWaterSurface();
+    drawWaves();
+    drawFish();
+    updateEagle();
+    checkCollisions();
+    drawEagle();
+
+    // Message timer
+    if(msgTimer>0){ msgTimer--; if(msgTimer<=0) msgBox.style.display='none'; }
+
+    requestAnimationFrame(loop);
+  }
+
+  // Keyboard
+  document.addEventListener('keydown',function(e){
+    keys[e.key]=true;
+    if(['ArrowUp','ArrowDown','ArrowLeft','ArrowRight'].includes(e.key)) e.preventDefault();
+  });
+  document.addEventListener('keyup',function(e){ keys[e.key]=false; });
+
+  // Touch / mouse drag for mobile
+  var touch={active:false,sx:0,sy:0};
+  canvas.addEventListener('touchstart',function(e){
+    var t=e.touches[0];
+    touch.active=true; touch.sx=t.clientX; touch.sy=t.clientY;
+    e.preventDefault();
+  },{passive:false});
+  canvas.addEventListener('touchmove',function(e){
+    if(!touch.active) return;
+    var t=e.touches[0];
+    var dx=t.clientX-touch.sx, dy=t.clientY-touch.sy;
+    keys['ArrowLeft']=dx<-8; keys['ArrowRight']=dx>8;
+    keys['ArrowUp']=dy<-8; keys['ArrowDown']=dy>8;
+    e.preventDefault();
+  },{passive:false});
+  canvas.addEventListener('touchend',function(){
+    touch.active=false;
+    keys['ArrowLeft']=keys['ArrowRight']=keys['ArrowUp']=keys['ArrowDown']=false;
   });
 
-  // --- Start button ---
+  // Start button
   var startBtn = document.getElementById('startBtn');
-  if (startBtn) startBtn.addEventListener('click', function() {
-    startGame();
-  });
+  if(startBtn) startBtn.addEventListener('click', startGame);
 
-  // --- Restart button ---
-  var restartBtn = document.getElementById('restartBtn');
-  if (restartBtn) restartBtn.addEventListener('click', function() {
-    startGame();
-  });
-
-  // BUTTON CHECKLIST: #startBtn ✓  #restartBtn ✓  #target ✓
+  // BUTTON CHECKLIST: #startBtn ✓
 });
 </script>
 </body>
